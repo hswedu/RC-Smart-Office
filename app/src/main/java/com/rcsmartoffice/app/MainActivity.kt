@@ -208,13 +208,13 @@ private fun xmlEscape(value: String): String = value
     .replace("&", "&amp;")
     .replace("<", "&lt;")
     .replace(">", "&gt;")
-    .replace("\\\"", "&quot;")
+    .replace("\"", "&quot;")
     .replace("'", "&apos;")
-
 
 private fun readDocxText(input: java.io.InputStream): String {
     val zip = java.util.zip.ZipInputStream(input)
     var documentXml: ByteArray? = null
+
     while (true) {
         val entry = zip.nextEntry ?: break
         if (entry.name == "word/document.xml") {
@@ -223,27 +223,48 @@ private fun readDocxText(input: java.io.InputStream): String {
         }
         zip.closeEntry()
     }
+
     zip.close()
     val xml = documentXml ?: error("word/document.xml not found")
     val result = StringBuilder()
     var inText = false
+
     val factory = javax.xml.parsers.SAXParserFactory.newInstance()
     factory.isNamespaceAware = true
-    factory.newSAXParser().parse(xml.inputStream(), object : org.xml.sax.helpers.DefaultHandler() {
-        override fun startElement(uri: String?, localName: String?, qName: String?, attrs: org.xml.sax.Attributes?) {
-            val name = localName?.ifBlank { qName } ?: qName.orEmpty()
-            if (name == "t") inText = true
-            if (name == "p" && result.isNotEmpty() && !result.endsWith("\\n")) result.append('\\n')
+
+    factory.newSAXParser().parse(
+        xml.inputStream(),
+        object : org.xml.sax.helpers.DefaultHandler() {
+            override fun startElement(
+                uri: String?,
+                localName: String?,
+                qName: String?,
+                attrs: org.xml.sax.Attributes?
+            ) {
+                val name = localName?.ifBlank { qName } ?: qName.orEmpty()
+                if (name == "t") inText = true
+                if (name == "p" && result.isNotEmpty() &&
+                    !result.endsWith("\n")
+                ) {
+                    result.append('\n')
+                }
+            }
+
+            override fun characters(ch: CharArray, start: Int, length: Int) {
+                if (inText) result.append(ch, start, length)
+            }
+
+            override fun endElement(
+                uri: String?,
+                localName: String?,
+                qName: String?
+            ) {
+                val name = localName?.ifBlank { qName } ?: qName.orEmpty()
+                if (name == "t") inText = false
+                if (name == "p") result.append('\n')
+            }
         }
-        override fun characters(ch: CharArray, start: Int, length: Int) {
-            if (inText) result.append(ch, start, length)
-        }
-        override fun endElement(uri: String?, localName: String?, qName: String?) {
-            val name = localName?.ifBlank { qName } ?: qName.orEmpty()
-            if (name == "t") inText = false
-            if (name == "p") result.append('\\n')
-        }
-    })
+    )
+
     return result.toString().trimEnd()
 }
-
